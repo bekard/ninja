@@ -38,13 +38,6 @@ struct FileReader {
                           std::string* err) = 0;
 };
 
-/*
-TODO:
-+ Move StatStatus inside StatResult and name it just status, remove class
-+ Add helper method like: IsError, IsMissing, Exist
-- Replace raw status check with helper functions
-*/
-
 struct StatResult {
   enum Status {
       Exists,
@@ -69,6 +62,10 @@ struct StatResult {
 
   bool IsError() const {
     return status_ == Status::Error;
+  }
+
+  bool IsUnknown() const {
+      return status_ == Status::Unknown;
   }
 
   Status status_ = Status::Unknown;

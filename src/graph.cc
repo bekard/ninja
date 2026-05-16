@@ -33,11 +33,7 @@ using namespace std;
 
 bool Node::Stat(DiskInterface* disk_interface, string* err) {
   stat_result_ = disk_interface->Stat(path_, err);
-  if (stat_result_.status_ == StatResult::Error) {
-    return false;
-  }
-  exists_ = stat_result_.DoesExist() ? ExistenceStatusExists : ExistenceStatusMissing;
-  return true;
+  return !stat_result_.IsError();
 }
 
 void Node::UpdatePhonyMtime(TimeStamp mtime) {

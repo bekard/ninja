@@ -60,7 +60,6 @@ struct Node {
   /// Mark as not-yet-stat()ed and not dirty.
   void ResetState() {
     stat_result_ = StatResult();
-    exists_ = ExistenceStatusUnknown;
     dirty_ = false;
   }
 
@@ -69,15 +68,14 @@ struct Node {
     if (stat_result_.IsError()) {
       stat_result_ = StatResult(StatResult::Missing);
     }
-    exists_ = ExistenceStatusMissing;
   }
 
   bool exists() const {
-    return exists_ == ExistenceStatusExists;
+    return stat_result_.DoesExist();
   }
 
   bool status_known() const {
-    return exists_ != ExistenceStatusUnknown;
+    return !stat_result_.IsUnknown();
   }
 
   const std::string& path() const { return path_; }
@@ -127,18 +125,6 @@ private:
   uint64_t slash_bits_ = 0;
 
   StatResult stat_result_;
-
-  enum ExistenceStatus : char {
-    /// The file hasn't been examined.
-    ExistenceStatusUnknown,
-    /// The file doesn't exist. mtime_ will be the latest mtime of its dependencies.
-    ExistenceStatusMissing,
-    /// The path is an actual file. mtime_ will be the file's mtime.
-    ExistenceStatusExists
-  };
-
-  // TODO: replace with stat_result_.status
-  ExistenceStatus exists_ = ExistenceStatusUnknown;
 
   /// Dirty is true when the underlying file is out-of-date.
   /// But note that Edge::outputs_ready_ is also used in judging which
