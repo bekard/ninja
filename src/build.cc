@@ -639,7 +639,7 @@ void Builder::Cleanup() {
         // but is interrupted before it touches its output file.)
         string err;
         StatResult stat_result = disk_interface_->Stat((*o)->path(), &err);
-        if (stat_result.status_ == StatStatus::Error)  // Log and ignore Stat() errors.
+        if (stat_result.IsError())  // Log and ignore Stat() errors.
           status_->Error("%s", err.c_str());
         if (!depfile.empty() || (*o)->mtime() != stat_result.mtime_)
           disk_interface_->RemoveFile((*o)->path());
@@ -650,8 +650,8 @@ void Builder::Cleanup() {
   }
 
   string err;
-  StatResult res = disk_interface_->Stat(lock_file_path_, &err);
-  if (res.status_ == StatStatus::Exist)
+  StatResult stat_result = disk_interface_->Stat(lock_file_path_, &err);
+  if (stat_result.DoesExist())
     disk_interface_->RemoveFile(lock_file_path_);
 }
 
@@ -861,7 +861,7 @@ bool Builder::StartEdge(Edge* edge, string* err) {
     if (build_start == -1) {
       disk_interface_->WriteFile(lock_file_path_, "", false);
       StatResult stat_result = disk_interface_->Stat(lock_file_path_, err);
-      if (stat_result.status_ == StatStatus::Error)
+      if (stat_result.IsError())
         build_start = 0;
     }
   }
@@ -950,7 +950,7 @@ bool Builder::FinishCommand(BuildResult::CommandCompleted& result,
            o != edge->outputs_.end(); ++o) {
         // TimeStamp new_mtime = disk_interface_->Stat((*o)->path(), err);
         StatResult stat_result = disk_interface_->Stat((*o)->path(), err);
-        if (stat_result.status_ == StatStatus::Error)
+        if (stat_result.IsError())
           return false;
 
         TimeStamp new_mtime = stat_result.mtime_;
@@ -993,7 +993,7 @@ bool Builder::FinishCommand(BuildResult::CommandCompleted& result,
     for (std::vector<Node*>::const_iterator o = edge->outputs_.begin();
          o != edge->outputs_.end(); ++o) {
       StatResult stat_result = disk_interface_->Stat((*o)->path(), err);
-      if (stat_result.status_ == StatStatus::Error)
+      if (stat_result.IsError())
         return false;
       if (!scan_.deps_log()->RecordDeps(*o, stat_result.mtime_, deps_nodes)) {
         *err = std::string("Error writing to deps log: ") + strerror(errno);

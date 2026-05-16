@@ -407,7 +407,7 @@ bool BuildLog::Restat(const StringPiece path,
     if (!skip) {
       // const TimeStamp mtime = disk_interface.Stat(pair.second->output, err);
       const StatResult stat_result = disk_interface.Stat(pair.second->output, err);
-      if (stat_result.status_ == StatStatus::Error) {
+      if (stat_result.IsError()) {
         fclose(f);
         return false;
       }

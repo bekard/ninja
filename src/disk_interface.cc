@@ -79,9 +79,9 @@ StatResult StatSingleFile(const string& path, string* err) {
   if (!GetFileAttributesExA(path.c_str(), GetFileExInfoStandard, &attrs)) {
     DWORD win_err = GetLastError();
     if (win_err == ERROR_FILE_NOT_FOUND || win_err == ERROR_PATH_NOT_FOUND)
-      return StatResult(StatStatus::NotExist);
+      return StatResult(StatResult::Missing);
     *err = "GetFileAttributesEx(" + path + "): " + GetLastErrorString();
-    return StatResult(StatStatus::Error);
+    return StatResult(StatResult::Error);
   }
 
   if (attrs.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) {
@@ -90,10 +90,10 @@ StatResult StatSingleFile(const string& path, string* err) {
     if (hFile == INVALID_HANDLE_VALUE) {
       DWORD win_err = GetLastError();
       if (win_err == ERROR_FILE_NOT_FOUND || win_err == ERROR_PATH_NOT_FOUND)
-        return StatResult(StatStatus::NotExist);
+        return StatResult(StatResult::Missing);
       *err = "CreateFileA(" + path + "): " + GetLastErrorString();
       CloseHandle(hFile);
-      return StatResult(StatStatus::Error);
+      return StatResult(StatResult::Error);
     }
 
     CHAR pathBuf[MAX_PATH];
@@ -101,17 +101,17 @@ StatResult StatSingleFile(const string& path, string* err) {
                                   FILE_NAME_NORMALIZED) == 0) {
       DWORD win_err = GetLastError();
       if (win_err == ERROR_FILE_NOT_FOUND || win_err == ERROR_PATH_NOT_FOUND)
-        return StatResult(StatStatus::NotExist);
+        return StatResult(StatResult::Missing);
       *err = "GetFinalPathNameByHandleA(" + path + "): " + GetLastErrorString();
       CloseHandle(hFile);
-      return StatResult(StatStatus::Error);
+      return StatResult(StatResult::Error);
     }
     CloseHandle(hFile);
     return StatSingleFile(pathBuf, err);
   }
 
   TimeStamp mtime = TimeStampFromFileTime(attrs.ftLastWriteTime);
-  return StatResult(StatStatus::Exist, mtime);
+  return StatResult(StatResult::Exists, mtime);
 }
 
 bool IsWindows7OrLater() {
@@ -160,7 +160,7 @@ bool StatAllFilesInDir(const string& dir, map<string, StatResult>* stamps,
       stamps->insert(make_pair(
           lowername, StatSingleFile(dir + "\\" + ffd.cFileName, err)));
     } else {
-      StatResult result(StatStatus::Exist, TimeStampFromFileTime(ffd.ftLastWriteTime));
+      StatResult result(StatResult::Exists, TimeStampFromFileTime(ffd.ftLastWriteTime));
       stamps->insert(make_pair(lowername, result));
     }
 
@@ -180,11 +180,11 @@ bool DiskInterface::MakeDirs(const string& path) {
     return true;  // Reached root; assume it's there.
   string err;
   StatResult stat_result = Stat(dir, &err);
-  if (stat_result.status_ < StatStatus::Error) {
+  if (stat_result.IsError()) {
     Error("%s", err.c_str());
     return false;
   }
-  if (stat_result.status_ < StatStatus::Exist)
+  if (stat_result.DoesExist())
     return true;  // Exists already; we're done.
 
   // Directory doesn't exist.  Try creating its parent first.
@@ -224,7 +224,7 @@ StatResult RealDiskInterface::Stat(const string& path, string* err) const {
     err_stream << "Stat(" << path << "): Filename longer than " << MAX_PATH
                << " characters";
     *err = err_stream.str();
-    return StatResult(StatStatus::Error);
+    return StatResult(StatResult::Error);
   }
   if (!use_cache_)
     return StatSingleFile(path, err);
@@ -246,11 +246,11 @@ StatResult RealDiskInterface::Stat(const string& path, string* err) const {
     ci = cache_.insert(make_pair(dir_lowercase, DirCache())).first;
     if (!StatAllFilesInDir(dir.empty() ? "." : dir, &ci->second, err)) {
       cache_.erase(ci);
-      return StatResult(StatStatus::Error);
+      return StatResult(StatResult::Error);
     }
   }
   DirCache::iterator di = ci->second.find(base);
-  return di != ci->second.end() ? di->second : StatResult(StatStatus::NotExist);
+  return di != ci->second.end() ? di->second : StatResult(StatResult::Missing);
 
 #else
 #ifdef __USE_LARGEFILE64
@@ -261,15 +261,15 @@ StatResult RealDiskInterface::Stat(const string& path, string* err) const {
   if (stat(path.c_str(), &st) < 0) {
 #endif
     if (errno == ENOENT || errno == ENOTDIR)
-      return StatResult(StatStatus::NotExist);
+      return StatResult(StatResult::Missing);
     *err = "stat(" + path + "): " + strerror(errno);
-    return StatResult(StatStatus::Error);
+    return StatResult(StatResult::Error);
   }
   // Some users (Flatpak) set mtime to 0, this should be harmless
   // and avoids conflicting with our return value of 0 meaning
   // that it doesn't exist.
   if (st.st_mtime == 0) {
-    return StatResult(StatStatus::Exist);
+    return StatResult(StatResult::Exists);
   }
 
   TimeStamp mtime;
@@ -283,7 +283,7 @@ StatResult RealDiskInterface::Stat(const string& path, string* err) const {
 #else
   mtime = (int64_t)st.st_mtime * 1000000000LL + st.st_mtimensec;
 #endif
-  return StatResult(StatStatus::Exist, mtime);
+  return StatResult(StatResult::Exists, mtime);
 #endif
 }
 

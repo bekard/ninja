@@ -38,27 +38,40 @@ struct FileReader {
                           std::string* err) = 0;
 };
 
-enum class StatStatus {
-  Exist,
-  NotExist,
-  Error,
-  Unknown,
-};
-
 /*
 TODO:
-- Move StatStatus inside StatResult and name it just status, remove class
-- Add helper method like: IsError, IsMissing, Exist
++ Move StatStatus inside StatResult and name it just status, remove class
++ Add helper method like: IsError, IsMissing, Exist
+- Replace raw status check with helper functions
 */
 
 struct StatResult {
+  enum Status {
+      Exists,
+      Missing,
+      Error,
+      Unknown,
+  };
+
   StatResult() = default;
 
-  StatResult(StatStatus status, TimeStamp mtime = 0)
+  StatResult(Status status, TimeStamp mtime = 0)
     :status_(status)
     ,mtime_(mtime) {}
 
-  StatStatus status_ = StatStatus::Unknown;
+  bool DoesExist() const {
+    return status_ == Status::Exists;
+  }
+
+  bool IsMissing() const {
+    return status_ == Status::Missing;
+  }
+
+  bool IsError() const {
+    return status_ == Status::Error;
+  }
+
+  Status status_ = Status::Unknown;
   TimeStamp mtime_ = 0;
 };
 

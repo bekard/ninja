@@ -66,8 +66,8 @@ struct Node {
 
   /// Mark the Node as already-stat()ed and missing.
   void MarkMissing() {
-    if (stat_result_.status_ == StatStatus::Error) {
-      stat_result_ = StatResult(StatStatus::NotExist);
+    if (stat_result_.IsError()) {
+      stat_result_ = StatResult(StatResult::Missing);
     }
     exists_ = ExistenceStatusMissing;
   }

@@ -190,9 +190,9 @@ struct NinjaMain : public BuildLogUser {
     // generators that want to use this information.
     string err;
     StatResult stat_result = disk_interface_.Stat(s.AsString(), &err);
-    if (stat_result.status_ == StatStatus::Error)
+    if (stat_result.IsError())
       Error("%s", err.c_str());  // Log and ignore Stat() errors.
-    return stat_result.status_ == StatStatus::NotExist;
+    return stat_result.IsMissing();
   }
 
   int64_t start_time_millis_;
@@ -593,7 +593,7 @@ int NinjaMain::ToolDeps(const Options* options, int argc, char** argv) {
 
     string err;
     StatResult stat_result = disk_interface.Stat((*it)->path(), &err);
-    if (stat_result.status_ == StatStatus::Error)
+    if (stat_result.IsError())
       Error("%s", err.c_str());  // Log and ignore Stat() errors;
 
     TimeStamp mtime = stat_result.mtime_;

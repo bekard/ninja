@@ -43,9 +43,9 @@ bool Cleaner::FileExists(const string& path) {
   string err;
   // TimeStamp mtime = disk_interface_->Stat(path, &err);
   StatResult stat_result = disk_interface_->Stat(path, &err);
-  if (stat_result.status_ == StatStatus::Error)
+  if (stat_result.IsError())
     Error("%s", err.c_str());
-  return stat_result.status_ == StatStatus::Exist;  // Treat Stat() errors as "file does not exist".
+  return stat_result.DoesExist();  // Treat Stat() errors as "file does not exist".
 }
 
 void Cleaner::Report(const string& path) {
