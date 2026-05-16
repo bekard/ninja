@@ -405,12 +405,13 @@ bool BuildLog::Restat(const StringPiece path,
       }
     }
     if (!skip) {
-      const TimeStamp mtime = disk_interface.Stat(pair.second->output, err);
-      if (mtime == -1) {
+      // const TimeStamp mtime = disk_interface.Stat(pair.second->output, err);
+      const StatResult stat_result = disk_interface.Stat(pair.second->output, err);
+      if (stat_result.status_ == StatStatus::Error) {
         fclose(f);
         return false;
       }
-      pair.second->mtime = mtime;
+      pair.second->mtime = stat_result.mtime_;
     }
 
     if (!WriteEntry(f, *pair.second)) {

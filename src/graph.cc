@@ -32,17 +32,17 @@
 using namespace std;
 
 bool Node::Stat(DiskInterface* disk_interface, string* err) {
-  mtime_ = disk_interface->Stat(path_, err);
-  if (mtime_ == -1) {
+  stat_result_ = disk_interface->Stat(path_, err);
+  if (stat_result_.status_ == StatStatus::Error) {
     return false;
   }
-  exists_ = (mtime_ != 0) ? ExistenceStatusExists : ExistenceStatusMissing;
+  exists_ = (stat_result_.status_ == StatStatus::Exist) ? ExistenceStatusExists : ExistenceStatusMissing;
   return true;
 }
 
 void Node::UpdatePhonyMtime(TimeStamp mtime) {
   if (!exists()) {
-    mtime_ = std::max(mtime_, mtime);
+    stat_result_.mtime_ = std::max(stat_result_.mtime_, mtime);
   }
 }
 

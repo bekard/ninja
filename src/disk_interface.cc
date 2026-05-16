@@ -74,14 +74,14 @@ TimeStamp TimeStampFromFileTime(const FILETIME& filetime) {
   return (TimeStamp)mtime - 12622770400LL * (1000000000LL / 100);
 }
 
-TimeStamp StatSingleFile(const string& path, string* err) {
+StatResult StatSingleFile(const string& path, string* err) {
   WIN32_FILE_ATTRIBUTE_DATA attrs;
   if (!GetFileAttributesExA(path.c_str(), GetFileExInfoStandard, &attrs)) {
     DWORD win_err = GetLastError();
     if (win_err == ERROR_FILE_NOT_FOUND || win_err == ERROR_PATH_NOT_FOUND)
-      return 0;
+      return StatResult(StatStatus::NotExist);
     *err = "GetFileAttributesEx(" + path + "): " + GetLastErrorString();
-    return -1;
+    return StatResult(StatStatus::Error);
   }
 
   if (attrs.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) {
@@ -90,10 +90,10 @@ TimeStamp StatSingleFile(const string& path, string* err) {
     if (hFile == INVALID_HANDLE_VALUE) {
       DWORD win_err = GetLastError();
       if (win_err == ERROR_FILE_NOT_FOUND || win_err == ERROR_PATH_NOT_FOUND)
-        return 0;
+        return StatResult(StatStatus::NotExist);
       *err = "CreateFileA(" + path + "): " + GetLastErrorString();
       CloseHandle(hFile);
-      return -1;
+      return StatResult(StatStatus::Error);
     }
 
     CHAR pathBuf[MAX_PATH];
@@ -101,16 +101,17 @@ TimeStamp StatSingleFile(const string& path, string* err) {
                                   FILE_NAME_NORMALIZED) == 0) {
       DWORD win_err = GetLastError();
       if (win_err == ERROR_FILE_NOT_FOUND || win_err == ERROR_PATH_NOT_FOUND)
-        return 0;
+        return StatResult(StatStatus::NotExist);
       *err = "GetFinalPathNameByHandleA(" + path + "): " + GetLastErrorString();
       CloseHandle(hFile);
-      return -1;
+      return StatResult(StatStatus::Error);
     }
     CloseHandle(hFile);
     return StatSingleFile(pathBuf, err);
   }
 
-  return TimeStampFromFileTime(attrs.ftLastWriteTime);
+  TimeStamp mtime = TimeStampFromFileTime(attrs.ftLastWriteTime);
+  return StatResult(StatStatus::Exist, mtime);
 }
 
 bool IsWindows7OrLater() {
@@ -123,7 +124,7 @@ bool IsWindows7OrLater() {
       &version_info, VER_MAJORVERSION | VER_MINORVERSION, comparison);
 }
 
-bool StatAllFilesInDir(const string& dir, map<string, TimeStamp>* stamps,
+bool StatAllFilesInDir(const string& dir, map<string, StatResult>* stamps,
                        string* err) {
   // FindExInfoBasic is 30% faster than FindExInfoStandard.
   static bool can_use_basic_info = IsWindows7OrLater();
@@ -159,8 +160,8 @@ bool StatAllFilesInDir(const string& dir, map<string, TimeStamp>* stamps,
       stamps->insert(make_pair(
           lowername, StatSingleFile(dir + "\\" + ffd.cFileName, err)));
     } else {
-      stamps->insert(
-          make_pair(lowername, TimeStampFromFileTime(ffd.ftLastWriteTime)));
+      StatResult result(StatStatus::Exist, TimeStampFromFileTime(ffd.ftLastWriteTime));
+      stamps->insert(make_pair(lowername, result));
     }
 
   } while (FindNextFileA(find_handle, &ffd));
@@ -178,12 +179,12 @@ bool DiskInterface::MakeDirs(const string& path) {
   if (dir.empty())
     return true;  // Reached root; assume it's there.
   string err;
-  TimeStamp mtime = Stat(dir, &err);
-  if (mtime < 0) {
+  StatResult stat_result = Stat(dir, &err);
+  if (stat_result.status_ < StatStatus::Error) {
     Error("%s", err.c_str());
     return false;
   }
-  if (mtime > 0)
+  if (stat_result.status_ < StatStatus::Exist)
     return true;  // Exists already; we're done.
 
   // Directory doesn't exist.  Try creating its parent first.
@@ -212,7 +213,7 @@ RealDiskInterface::RealDiskInterface()
 {}
 #endif
 
-TimeStamp RealDiskInterface::Stat(const string& path, string* err) const {
+StatResult RealDiskInterface::Stat(const string& path, string* err) const {
   METRIC_RECORD("node stat");
 #ifdef _WIN32
   // MSDN: "Naming Files, Paths, and Namespaces"
@@ -223,7 +224,7 @@ TimeStamp RealDiskInterface::Stat(const string& path, string* err) const {
     err_stream << "Stat(" << path << "): Filename longer than " << MAX_PATH
                << " characters";
     *err = err_stream.str();
-    return -1;
+    return StatResult(StatStatus::Error);
   }
   if (!use_cache_)
     return StatSingleFile(path, err);
@@ -245,11 +246,12 @@ TimeStamp RealDiskInterface::Stat(const string& path, string* err) const {
     ci = cache_.insert(make_pair(dir_lowercase, DirCache())).first;
     if (!StatAllFilesInDir(dir.empty() ? "." : dir, &ci->second, err)) {
       cache_.erase(ci);
-      return -1;
+      return StatResult(StatStatus::Error);
     }
   }
   DirCache::iterator di = ci->second.find(base);
-  return di != ci->second.end() ? di->second : 0;
+  return di != ci->second.end() ? di->second : StatResult(StatStatus::NotExist);
+
 #else
 #ifdef __USE_LARGEFILE64
   struct stat64 st;
@@ -259,25 +261,29 @@ TimeStamp RealDiskInterface::Stat(const string& path, string* err) const {
   if (stat(path.c_str(), &st) < 0) {
 #endif
     if (errno == ENOENT || errno == ENOTDIR)
-      return 0;
+      return StatResult(StatStatus::NotExist);
     *err = "stat(" + path + "): " + strerror(errno);
-    return -1;
+    return StatResult(StatStatus::Error);
   }
   // Some users (Flatpak) set mtime to 0, this should be harmless
   // and avoids conflicting with our return value of 0 meaning
   // that it doesn't exist.
-  if (st.st_mtime == 0)
-    return 1;
+  if (st.st_mtime == 0) {
+    return StatResult(StatStatus::Exist);
+  }
+
+  TimeStamp mtime;
 #if defined(_AIX)
-  return (int64_t)st.st_mtime * 1000000000LL + st.st_mtime_n;
+  mtime = (int64_t)st.st_mtime * 1000000000LL + st.st_mtime_n;
 #elif defined(__APPLE__)
-  return ((int64_t)st.st_mtimespec.tv_sec * 1000000000LL +
+  mtime = ((int64_t)st.st_mtimespec.tv_sec * 1000000000LL +
           st.st_mtimespec.tv_nsec);
 #elif defined(st_mtime) // A macro, so we're likely on modern POSIX.
-  return (int64_t)st.st_mtim.tv_sec * 1000000000LL + st.st_mtim.tv_nsec;
+  mtime = (int64_t)st.st_mtim.tv_sec * 1000000000LL + st.st_mtim.tv_nsec;
 #else
-  return (int64_t)st.st_mtime * 1000000000LL + st.st_mtimensec;
+  mtime = (int64_t)st.st_mtime * 1000000000LL + st.st_mtimensec;
 #endif
+  return StatResult(StatStatus::Exist, mtime);
 #endif
 }
 

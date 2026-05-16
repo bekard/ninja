@@ -189,10 +189,10 @@ struct NinjaMain : public BuildLogUser {
     // Do keep entries around for files which still exist on disk, for
     // generators that want to use this information.
     string err;
-    TimeStamp mtime = disk_interface_.Stat(s.AsString(), &err);
-    if (mtime == -1)
+    StatResult stat_result = disk_interface_.Stat(s.AsString(), &err);
+    if (stat_result.status_ == StatStatus::Error)
       Error("%s", err.c_str());  // Log and ignore Stat() errors.
-    return mtime == 0;
+    return stat_result.status_ == StatStatus::NotExist;
   }
 
   int64_t start_time_millis_;
@@ -592,9 +592,11 @@ int NinjaMain::ToolDeps(const Options* options, int argc, char** argv) {
     }
 
     string err;
-    TimeStamp mtime = disk_interface.Stat((*it)->path(), &err);
-    if (mtime == -1)
+    StatResult stat_result = disk_interface.Stat((*it)->path(), &err);
+    if (stat_result.status_ == StatStatus::Error)
       Error("%s", err.c_str());  // Log and ignore Stat() errors;
+
+    TimeStamp mtime = stat_result.mtime_;
     printf("%s: #deps %d, deps mtime %" PRId64 " (%s)\n",
            (*it)->path().c_str(), deps->node_count, deps->mtime,
            (!mtime || mtime > deps->mtime ? "STALE":"VALID"));

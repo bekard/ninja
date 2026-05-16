@@ -38,6 +38,30 @@ struct FileReader {
                           std::string* err) = 0;
 };
 
+enum class StatStatus {
+  Exist,
+  NotExist,
+  Error,
+  Unknown,
+};
+
+/*
+TODO:
+- Move StatStatus inside StatResult and name it just status, remove class
+- Add helper method like: IsError, IsMissing, Exist
+*/
+
+struct StatResult {
+  StatResult() = default;
+
+  StatResult(StatStatus status, TimeStamp mtime = 0)
+    :status_(status)
+    ,mtime_(mtime) {}
+
+  StatStatus status_ = StatStatus::Unknown;
+  TimeStamp mtime_ = 0;
+};
+
 /// Interface for accessing the disk.
 ///
 /// Abstract so it can be mocked out for tests.  The real implementation
@@ -45,7 +69,7 @@ struct FileReader {
 struct DiskInterface: public FileReader {
   /// stat() a file, returning the mtime, or 0 if missing and -1 on
   /// other errors.
-  virtual TimeStamp Stat(const std::string& path, std::string* err) const = 0;
+  virtual StatResult Stat(const std::string& path, std::string* err) const = 0;
 
   /// Create a directory, returning false on failure.
   virtual bool MakeDir(const std::string& path) = 0;
@@ -73,7 +97,7 @@ struct DiskInterface: public FileReader {
 struct RealDiskInterface : public DiskInterface {
   RealDiskInterface();
   virtual ~RealDiskInterface() {}
-  TimeStamp Stat(const std::string& path, std::string* err) const override;
+  StatResult Stat(const std::string& path, std::string* err) const override;
   bool MakeDir(const std::string& path) override;
   bool WriteFile(const std::string& path, const std::string& contents,
                  bool crlf_on_windows) override;
@@ -97,7 +121,7 @@ struct RealDiskInterface : public DiskInterface {
   /// Whether long paths are enabled.
   bool long_paths_enabled_;
 
-  typedef std::map<std::string, TimeStamp> DirCache;
+  typedef std::map<std::string, StatResult> DirCache;
   // TODO: Neither a map nor a hashmap seems ideal here.  If the statcache
   // works out, come up with a better data structure.
   typedef std::map<std::string, DirCache> Cache;

@@ -27,6 +27,7 @@
 #include "jobserver.h"
 #include "timestamp.h"
 #include "util.h"
+#include "disk_interface.h"
 
 struct BuildLog;
 struct DepfileParserOptions;
@@ -58,15 +59,15 @@ struct Node {
 
   /// Mark as not-yet-stat()ed and not dirty.
   void ResetState() {
-    mtime_ = -1;
+    stat_result_ = StatResult();
     exists_ = ExistenceStatusUnknown;
     dirty_ = false;
   }
 
   /// Mark the Node as already-stat()ed and missing.
   void MarkMissing() {
-    if (mtime_ == -1) {
-      mtime_ = 0;
+    if (stat_result_.status_ == StatStatus::Error) {
+      stat_result_ = StatResult(StatStatus::NotExist);
     }
     exists_ = ExistenceStatusMissing;
   }
@@ -88,7 +89,7 @@ struct Node {
                                          uint64_t slash_bits);
   uint64_t slash_bits() const { return slash_bits_; }
 
-  TimeStamp mtime() const { return mtime_; }
+  TimeStamp mtime() const { return stat_result_.mtime_; }
 
   bool dirty() const { return dirty_; }
   void set_dirty(bool dirty) { dirty_ = dirty; }
@@ -125,11 +126,7 @@ private:
   /// forward slashes by CanonicalizePath. See |PathDecanonicalized|.
   uint64_t slash_bits_ = 0;
 
-  /// Possible values of mtime_:
-  ///   -1: file hasn't been examined
-  ///   0:  we looked, and file doesn't exist
-  ///   >0: actual file's mtime, or the latest mtime of its dependencies if it doesn't exist
-  TimeStamp mtime_ = -1;
+  StatResult stat_result_;
 
   enum ExistenceStatus : char {
     /// The file hasn't been examined.
@@ -139,6 +136,8 @@ private:
     /// The path is an actual file. mtime_ will be the file's mtime.
     ExistenceStatusExists
   };
+
+  // TODO: replace with stat_result_.status
   ExistenceStatus exists_ = ExistenceStatusUnknown;
 
   /// Dirty is true when the underlying file is out-of-date.
