@@ -51,18 +51,18 @@ struct DiskInterfaceTest : public testing::Test {
 
 TEST_F(DiskInterfaceTest, StatMissingFile) {
   string err;
-  EXPECT_EQ(0, disk_.Stat("nosuchfile", &err));
+  EXPECT_TRUE(disk_.Stat("nosuchfile", &err).IsMissing());
   EXPECT_EQ("", err);
 
   // On Windows, the errno for a file in a nonexistent directory
   // is different.
-  EXPECT_EQ(0, disk_.Stat("nosuchdir/nosuchfile", &err));
+  EXPECT_TRUE(disk_.Stat("nosuchdir/nosuchfile", &err).IsMissing());
   EXPECT_EQ("", err);
 
   // On POSIX systems, the errno is different if a component of the
   // path prefix is not a directory.
   ASSERT_TRUE(Touch("notadir"));
-  EXPECT_EQ(0, disk_.Stat("notadir/nosuchfile", &err));
+  EXPECT_TRUE(disk_.Stat("notadir/nosuchfile", &err).IsMissing());
   EXPECT_EQ("", err);
 }
 
@@ -73,7 +73,7 @@ TEST_F(DiskInterfaceTest, StatMissingFileWithCache) {
   // On Windows, the errno for FindFirstFileExA, which is used when the stat
   // cache is enabled, is different when the directory name is not a directory.
   ASSERT_TRUE(Touch("notadir"));
-  EXPECT_EQ(0, disk_.Stat("notadir/nosuchfile", &err));
+  EXPECT_TRUE(disk_.Stat("notadir/nosuchfile", &err).IsMissing());
   EXPECT_EQ("", err);
 }
 
@@ -81,11 +81,11 @@ TEST_F(DiskInterfaceTest, StatBadPath) {
   string err;
 #ifdef _WIN32
   string bad_path("cc:\\foo");
-  EXPECT_EQ(-1, disk_.Stat(bad_path, &err));
+  EXPECT_TRUE(disk_.Stat(bad_path, &err).IsError());
   EXPECT_NE("", err);
 #else
   string too_long_name(512, 'x');
-  EXPECT_EQ(-1, disk_.Stat(too_long_name, &err));
+  EXPECT_TRUE(disk_.Stat(too_long_name, &err).IsError());
   EXPECT_NE("", err);
 #endif
 }
@@ -93,7 +93,10 @@ TEST_F(DiskInterfaceTest, StatBadPath) {
 TEST_F(DiskInterfaceTest, StatExistingFile) {
   string err;
   ASSERT_TRUE(Touch("file"));
-  EXPECT_GT(disk_.Stat("file", &err), 1);
+  StatResult stat_result = disk_.Stat("file", &err);
+
+  EXPECT_TRUE(stat_result.DoesExist());
+  EXPECT_GT(stat_result.mtime_, 1);
   EXPECT_EQ("", err);
 }
 
@@ -109,8 +112,11 @@ xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\
 xxxxxxxxxxxxxxxxxxxxx";
   const string prefixed = "\\\\?\\" + filename;
   ASSERT_TRUE(Touch(prefixed.c_str()));
-  EXPECT_GT(disk_.Stat(disk_.AreLongPathsEnabled() ?
-    filename : prefixed, &err), 1);
+  StatResult stat_result = disk_.Stat(disk_.AreLongPathsEnabled() ?
+    filename : prefixed, &err);
+
+  EXPECT_TRUE(stat_result.DoesExist());
+  EXPECT_GT(stat_result.mtime_, 1);
   EXPECT_EQ("", err);
 }
 #endif
@@ -119,7 +125,8 @@ TEST_F(DiskInterfaceTest, StatSymlink) {
   string err;
 
   ASSERT_TRUE(Touch("file"));
-  auto fileTimeStamp = disk_.Stat("file", &err);
+  StatResult file_stat_result = disk_.Stat("file", &err);
+  EXPECT_TRUE(file_stat_result.DoesExist());
   EXPECT_EQ("", err);
 
 #ifdef _WIN32
@@ -132,21 +139,37 @@ TEST_F(DiskInterfaceTest, StatSymlink) {
 
   // Assert that stating the symlink will resolve the timestamp for the
   // linked file.
-  auto symlinkTimeStamp = disk_.Stat("fileSymlink", &err);
-  ASSERT_EQ(fileTimeStamp, symlinkTimeStamp);
+  StatResult symlink_stat_result = disk_.Stat("fileSymlink", &err);
+  EXPECT_TRUE(symlink_stat_result.DoesExist());
+  EXPECT_EQ("", err);
+
+  ASSERT_EQ(file_stat_result.mtime_, symlink_stat_result.mtime_);
 }
 
 TEST_F(DiskInterfaceTest, StatExistingDir) {
   string err;
   ASSERT_TRUE(disk_.MakeDir("subdir"));
   ASSERT_TRUE(disk_.MakeDir("subdir/subsubdir"));
-  EXPECT_GT(disk_.Stat("..", &err), 1);
+
+  // TODO: get rid of copy-paste
+  StatResult stat_result = disk_.Stat("..", &err);
+  EXPECT_TRUE(stat_result.DoesExist());
+  EXPECT_GT(stat_result.mtime_, 1);
   EXPECT_EQ("", err);
-  EXPECT_GT(disk_.Stat(".", &err), 1);
+
+  stat_result = disk_.Stat(".", &err);
+  EXPECT_TRUE(stat_result.DoesExist());
+  EXPECT_GT(stat_result.mtime_, 1);
   EXPECT_EQ("", err);
-  EXPECT_GT(disk_.Stat("subdir", &err), 1);
+
+  stat_result = disk_.Stat("subdir", &err);
+  EXPECT_TRUE(stat_result.DoesExist());
+  EXPECT_GT(stat_result.mtime_, 1);
   EXPECT_EQ("", err);
-  EXPECT_GT(disk_.Stat("subdir/subsubdir", &err), 1);
+
+  stat_result = disk_.Stat("subdir/subsubdir", &err);
+  EXPECT_TRUE(stat_result.DoesExist());
+  EXPECT_GT(stat_result.mtime_, 1);
   EXPECT_EQ("", err);
 
   EXPECT_EQ(disk_.Stat("subdir", &err),
@@ -283,7 +306,7 @@ struct StatTest : public StateTestWithBuiltinRules,
   StatTest() : scan_(&state_, NULL, NULL, this, NULL, NULL) {}
 
   // DiskInterface implementation.
-  TimeStamp Stat(const string& path, string* err) const override;
+  StatResult Stat(const string& path, string* err) const override;
   bool WriteFile(const string& path, const string& contents,
                  bool /*crlf_on_windows*/) override {
     assert(false);
@@ -303,15 +326,15 @@ struct StatTest : public StateTestWithBuiltinRules,
   }
 
   DependencyScan scan_;
-  map<string, TimeStamp> mtimes_;
+  map<string, StatResult> mtimes_;
   mutable vector<string> stats_;
 };
 
-TimeStamp StatTest::Stat(const string& path, string* err) const {
+StatResult StatTest::Stat(const string& path, string* err) const {
   stats_.push_back(path);
-  map<string, TimeStamp>::const_iterator i = mtimes_.find(path);
+  map<string, StatResult>::const_iterator i = mtimes_.find(path);
   if (i == mtimes_.end())
-    return 0;  // File not found.
+    return StatResult(StatResult::Missing);  // File not found.
   return i->second;
 }
 
@@ -373,9 +396,9 @@ TEST_F(StatTest, Middle) {
 "build out: cat mid\n"
 "build mid: cat in\n"));
 
-  mtimes_["in"] = 1;
-  mtimes_["mid"] = 0;  // missing
-  mtimes_["out"] = 1;
+  mtimes_["in"] = StatResult(StatResult::Exists);
+  mtimes_["mid"] = StatResult(StatResult::Missing);
+  mtimes_["out"] = StatResult(StatResult::Exists);
 
   Node* out = GetNode("out");
   string err;

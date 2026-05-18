@@ -44,9 +44,9 @@ using namespace std;
 
 bool WriteFakeManifests(const string& dir, string* err) {
   RealDiskInterface disk_interface;
-  TimeStamp mtime = disk_interface.Stat(dir + "/build.ninja", err);
-  if (mtime != 0)  // 0 means that the file doesn't exist yet.
-    return mtime != -1;
+  StatResult stat_result = disk_interface.Stat(dir + "/build.ninja", err);
+  if (!stat_result.IsMissing())  // 0 means that the file doesn't exist yet.
+    return !stat_result.IsError();
 
   string command = "python misc/write_fake_manifests.py " + dir;
   printf("Creating manifest data..."); fflush(stdout);

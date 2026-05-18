@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <cassert>
+#include "disk_interface.h"
 #ifdef _WIN32
 #include <direct.h>  // Has to be before util.h is included.
 #endif
@@ -144,22 +146,26 @@ void VerifyGraph(const State& state) {
 
 void VirtualFileSystem::Create(const string& path,
                                const string& contents) {
-  files_[path].mtime = now_;
+  files_[path].stat_result = StatResult(StatResult::Exists, now_);
   files_[path].contents = contents;
   files_created_.insert(path);
 }
 
-TimeStamp VirtualFileSystem::Stat(const string& path, string* err) const {
+StatResult VirtualFileSystem::Stat(const string& path, string* err) const {
   FileMap::const_iterator i = files_.find(path);
   if (i != files_.end()) {
     if (!i->second.stat_error.empty()) {
       *err = i->second.stat_error;
-      return -1;
+      return StatResult(StatResult::Error);
     }
-    assert(i->second.mtime > 0);
-    return i->second.mtime;
+
+    const StatResult& stat_result = i->second.stat_result;
+    assert(stat_result.DoesExist());
+    assert(stat_result.mtime_ > 0);
+
+    return stat_result;
   }
-  return 0;
+  return StatResult(StatResult::Missing);
 }
 
 bool VirtualFileSystem::WriteFile(const string& path, const string& contents,

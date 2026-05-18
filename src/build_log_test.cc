@@ -14,6 +14,7 @@
 
 #include "build_log.h"
 
+#include "disk_interface.h"
 #include "util.h"
 #include "test.h"
 
@@ -227,8 +228,8 @@ TEST_F(BuildLogTest, DuplicateVersionHeader) {
 }
 
 struct TestDiskInterface : public DiskInterface {
-  TimeStamp Stat(const std::string& path, std::string* err) const override {
-    return 4;
+  StatResult Stat(const std::string& path, std::string* err) const override {
+    return StatResult(StatResult::Exists, 4);
   }
   bool WriteFile(const std::string& path, const std::string& contents,
                  bool crlf_on_windows) override {

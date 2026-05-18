@@ -61,7 +61,7 @@ struct VirtualFileSystem : public DiskInterface {
   }
 
   // DiskInterface
-  TimeStamp Stat(const std::string& path, std::string* err) const override;
+  StatResult Stat(const std::string& path, std::string* err) const override;
   bool WriteFile(const std::string& path, const std::string& contents,
                  bool /*crlf_on_windows*/) override;
   bool MakeDir(const std::string& path) override;
@@ -71,7 +71,7 @@ struct VirtualFileSystem : public DiskInterface {
 
   /// An entry for a single in-memory file.
   struct Entry {
-    int mtime;
+    StatResult stat_result;
     std::string stat_error;  // If mtime is -1.
     std::string contents;
   };

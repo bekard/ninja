@@ -50,7 +50,9 @@ struct StatResult {
 
   StatResult(Status status, TimeStamp mtime = 0)
     :status_(status)
-    ,mtime_(mtime) {}
+    ,mtime_(mtime)
+  {
+  }
 
   bool DoesExist() const {
     return status_ == Status::Exists;
@@ -66,6 +68,10 @@ struct StatResult {
 
   bool IsUnknown() const {
       return status_ == Status::Unknown;
+  }
+
+  bool operator==(const StatResult& result) const {
+    return status_ == result.status_ && mtime_ == result.mtime_;
   }
 
   Status status_ = Status::Unknown;

@@ -21,6 +21,7 @@
 #include "build_log.h"
 #include "build_result.h"
 #include "deps_log.h"
+#include "disk_interface.h"
 #include "exit_status.h"
 #include "graph.h"
 #include "status_printer.h"
@@ -781,9 +782,9 @@ BuildResult FakeCommandRunner::WaitForCommand() {
   if (edge->rule().name() == "long-cc") {
     string dep = edge->GetBinding("test_dependency");
     if (fs_->now_ == 4)
-      fs_->files_[dep].mtime = 3;
+      fs_->files_[dep].stat_result =  StatResult(StatResult::Exists, 3);
     if (fs_->now_ == 10)
-      fs_->files_[dep].mtime = 9;
+      fs_->files_[dep].stat_result = StatResult(StatResult::Exists, 9);
   }
 
   // Provide a way for test cases to verify when an edge finishes that
@@ -2225,7 +2226,7 @@ TEST_F(BuildTest, InterruptCleanup) {
   EXPECT_EQ(builder_.Build(&err), ExitInterrupted);
   EXPECT_EQ("interrupted by user", err);
   builder_.Cleanup();
-  EXPECT_GT(fs_.Stat("out1", &err), 0);
+  EXPECT_TRUE(fs_.Stat("out1", &err).DoesExist());
   err = "";
 
   // A touched output of an interrupted command should be deleted.
@@ -2234,7 +2235,7 @@ TEST_F(BuildTest, InterruptCleanup) {
   EXPECT_EQ(builder_.Build(&err), ExitInterrupted);
   EXPECT_EQ("interrupted by user", err);
   builder_.Cleanup();
-  EXPECT_EQ(0, fs_.Stat("out2", &err));
+  EXPECT_TRUE(fs_.Stat("out2", &err).IsMissing());
 }
 
 TEST_F(BuildTest, StatFailureAbortsBuild) {
@@ -2244,7 +2245,7 @@ TEST_F(BuildTest, StatFailureAbortsBuild) {
   fs_.Create("in", "");
 
   // This simulates a stat failure:
-  fs_.files_[kTooLongToStat].mtime = -1;
+  fs_.files_[kTooLongToStat].stat_result = StatResult(StatResult::Error);
   fs_.files_[kTooLongToStat].stat_error = "stat failed";
 
   string err;
@@ -2607,7 +2608,7 @@ TEST_F(BuildWithDepsLogTest, Straightforward) {
     EXPECT_EQ("", err);
 
     // The deps file should have been removed.
-    EXPECT_EQ(0, fs_.Stat("in1.d", &err));
+    EXPECT_TRUE(fs_.Stat("in1.d", &err).IsMissing());
     // Recreate it for the next step.
     fs_.Create("in1.d", "out: in2");
     deps_log.Close();
@@ -2685,7 +2686,7 @@ TEST_F(BuildWithDepsLogTest, ObsoleteDeps) {
   fs_.Create("out", "");
 
   // The deps file should have been removed, so no need to timestamp it.
-  EXPECT_EQ(0, fs_.Stat("in1.d", &err));
+  EXPECT_TRUE(fs_.Stat("in1.d", &err).IsMissing());
 
   {
     State state;
@@ -2802,7 +2803,10 @@ TEST_F(BuildWithDepsLogTest, TestInputMtimeRaceCondition) {
     // Check that the logfile entry is still correct
     log_entry = build_log.LookupByOutput("out");
     ASSERT_TRUE(NULL != log_entry);
-    ASSERT_TRUE(fs_.files_["in1"].mtime < log_entry->mtime);
+
+    const StatResult& stat_result = fs_.files_["in1"].stat_result;
+    ASSERT_TRUE(stat_result.DoesExist());
+    ASSERT_TRUE(stat_result.mtime_ < log_entry->mtime);
   }
 
   {
@@ -4304,7 +4308,7 @@ TEST_F(BuildWithDepsLogTest, ValidationThroughDepfile) {
     EXPECT_EQ("cat in3 > out2", command_runner_.commands_ran_[0]);
 
     // The deps file should have been removed.
-    EXPECT_EQ(0, fs_.Stat("out2.d", &err));
+    EXPECT_TRUE(fs_.Stat("out2.d", &err).IsMissing());
 
     deps_log.Close();
   }
